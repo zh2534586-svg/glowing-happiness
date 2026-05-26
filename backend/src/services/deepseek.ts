@@ -1,5 +1,24 @@
 import OpenAI from 'openai';
 
+// Polyfill Web APIs for Node.js < 18 (CentOS 7 compatibility)
+if (!globalThis.fetch) {
+  const nodeFetch = require('node-fetch');
+  (globalThis as any).fetch = nodeFetch;
+  (globalThis as any).Headers = nodeFetch.Headers;
+  (globalThis as any).Request = nodeFetch.Request;
+  (globalThis as any).Response = nodeFetch.Response;
+  // Minimal FormData/Blob/File polyfills for openai package (not used for chat)
+  if (!(globalThis as any).FormData) {
+    (globalThis as any).FormData = class FormData {};
+  }
+  if (!(globalThis as any).Blob) {
+    (globalThis as any).Blob = class Blob {};
+  }
+  if (!(globalThis as any).File) {
+    (globalThis as any).File = class File {};
+  }
+}
+
 const deepseek = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY || 'sk-75fcca6416fe4c20b0a2855a055254b6',
   baseURL: 'https://api.deepseek.com',
