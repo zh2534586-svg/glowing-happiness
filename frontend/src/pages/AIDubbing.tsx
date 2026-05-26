@@ -24,7 +24,7 @@ export default function AIDubbing() {
   const handleDub = async () => {
     if (!text || !user) return;
     setLoading(true);
-    try { const { data } = await api.post('/ai/dubbing', { text, voice: selectedVoice.id, speed }); setResult(data); } catch {}
+    try { const { data } = await api.post('/ai/dubbing', { text, voice: selectedVoice.name, language: selectedVoice.lang, speed }); setResult(data); } catch {}
     setLoading(false);
   };
 
@@ -71,13 +71,17 @@ export default function AIDubbing() {
         {!user && <p className="text-center text-sm text-amber-400">请先登录</p>}
 
         {result && (
-          <div className="glass-card !p-4 flex items-center justify-between">
-            <div>
-              <div className="font-medium">{result.voice}</div>
-              <div className="text-sm text-gray-400 truncate max-w-md">"{result.text}"</div>
-              <div className="text-xs text-gray-500">时长: {result.duration}</div>
+          <div className="glass-card !p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium">{result.voice}</div>
+                <div className="text-sm text-gray-400 truncate max-w-md">"{result.text}"</div>
+                <div className="text-xs text-gray-500">时长: {result.duration} | 语速: {result.speed}x</div>
+              </div>
+              <button className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center"><Play size={18} className="text-primary-400" /></button>
             </div>
-            <button className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center"><Play size={18} className="text-primary-400" /></button>
+            {result.emotion && <span className="text-xs px-2 py-0.5 rounded-full bg-accent-500/10 text-accent-400 inline-block">{result.emotion}</span>}
+            {result.pronunciationNotes && <p className="text-xs text-gray-500 border-t border-primary-700/20 pt-2">{result.pronunciationNotes}</p>}
           </div>
         )}
       </div>

@@ -75,16 +75,38 @@ export default function AICompose() {
                 <div className="flex items-center gap-2"><Music size={18} className="text-primary-400" /><span className="font-medium">{result.title}</span></div>
                 <button className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center"><Play size={18} className="text-primary-400" /></button>
               </div>
-              <div className="flex flex-wrap gap-2 text-xs">
+              <div className="flex flex-wrap gap-2 text-xs mb-3">
                 <span className="px-3 py-1 rounded-full bg-primary-500/10 text-primary-400">{result.key}</span>
                 <span className="px-3 py-1 rounded-full bg-primary-500/10 text-primary-400">{result.bpm} BPM</span>
+                <span className="px-3 py-1 rounded-full bg-accent-500/10 text-accent-400">{result.mood}</span>
                 <span className="px-3 py-1 rounded-full bg-primary-500/10 text-primary-400">耗时: {result.processingTime}</span>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {result.structure.map((s: string, i: number) => (
+                {result.structure?.map((s: string, i: number) => (
                   <span key={i} className="text-xs px-2 py-1 rounded bg-dark-100 text-gray-400">{s}</span>
                 ))}
               </div>
+              {result.melodyDescription && <p className="text-sm text-gray-400 mt-3 border-t border-primary-700/20 pt-2">{result.melodyDescription}</p>}
+              {result.chordProgression && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {result.chordProgression.map((c: string, i: number) => (
+                    <span key={i} className="text-xs px-2 py-1 rounded bg-accent-500/10 text-accent-400">{c}</span>
+                  ))}
+                </div>
+              )}
+              {result.instrumentation && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {result.instrumentation.map((inst: string, i: number) => (
+                    <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-primary-500/10 text-primary-400">{inst}</span>
+                  ))}
+                </div>
+              )}
+              {result.lyrics && (
+                <div className="mt-3 border-t border-primary-700/20 pt-3">
+                  <div className="text-xs text-gray-500 mb-1">AI生成歌词</div>
+                  <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">{result.lyrics}</p>
+                </div>
+              )}
             </div>
           </div>
         )}

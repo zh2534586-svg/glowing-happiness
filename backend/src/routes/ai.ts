@@ -2,6 +2,12 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../config/database';
 import { authMiddleware, optionalAuth, AuthRequest } from '../middleware/auth';
+import {
+  generateCover,
+  generateSinger,
+  generateDubbing,
+  generateComposition,
+} from '../services/deepseek';
 
 export const aiRouter = Router();
 
@@ -82,56 +88,112 @@ aiRouter.post('/voice-enhance', authMiddleware, async (req: AuthRequest, res: Re
 
 // AI翻唱
 aiRouter.post('/cover', authMiddleware, async (req: AuthRequest, res: Response) => {
-  res.json({
-    id: uuidv4(),
-    originalSong: '原唱歌曲',
-    coverVoice: '选定音色',
-    outputUrl: '/uploads/demo/cover.mp3',
-    pitchShift: '+2 semitones',
-    processingTime: '8.5s',
-    model: 'RVC + so-vits-svc',
-  });
+  try {
+    const { songTitle, voice, style } = req.body;
+    const result = await generateCover({
+      songTitle: songTitle || '未指定歌曲',
+      targetVoice: voice || '流行女声',
+      style,
+    });
+
+    const data = {
+      id: uuidv4(),
+      ...result,
+      model: 'RVC + so-vits-svc + DeepSeek',
+    };
+
+    await prisma.project.create({
+      data: { userId: req.userId!, type: 'cover', title: `翻唱: ${result.originalSong || songTitle}`, status: 'completed', outputUrl: JSON.stringify(data) },
+    });
+    await prisma.user.update({ where: { id: req.userId! }, data: { credits: { decrement: 3 } } });
+
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: 'AI翻唱生成失败', detail: err.message });
+  }
 });
 
 // AI歌手
 aiRouter.post('/singer', authMiddleware, async (req: AuthRequest, res: Response) => {
-  res.json({
-    id: uuidv4(),
-    singerName: 'AI歌手 - 星尘',
-    voiceModel: 'stardust_v3',
-    sampleUrl: '/uploads/demo/singer_sample.mp3',
-    styles: ['流行', '摇滚', '民谣', 'R&B'],
-    range: 'C3 - C6',
-    processingTime: '2.1s',
-  });
+  try {
+    const { singer, style, description } = req.body;
+    const result = await generateSinger({
+      singerName: singer || 'AI歌手',
+      style: style || '流行',
+      description,
+    });
+
+    const data = {
+      id: uuidv4(),
+      ...result,
+      model: 'so-vits-svc 5.0 + DeepSeek',
+    };
+
+    await prisma.project.create({
+      data: { userId: req.userId!, type: 'singer', title: `AI歌手: ${result.singerName || singer}`, status: 'completed', outputUrl: JSON.stringify(data) },
+    });
+    await prisma.user.update({ where: { id: req.userId! }, data: { credits: { decrement: 2 } } });
+
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: 'AI歌手生成失败', detail: err.message });
+  }
 });
 
 // AI配音
 aiRouter.post('/dubbing', authMiddleware, async (req: AuthRequest, res: Response) => {
-  res.json({
-    id: uuidv4(),
-    text: req.body.text || '这是一段AI配音示例文本。',
-    voice: '标准女声 - 晓晓',
-    outputUrl: '/uploads/demo/dubbing.wav',
-    duration: '3.5s',
-    languages: ['zh-CN', 'en-US', 'ja-JP', 'ko-KR'],
-  });
+  try {
+    const { text, voice, language, speed } = req.body;
+    const result = await generateDubbing({
+      text: text || '这是一段AI配音示例文本。',
+      voice: voice || '晓晓',
+      language: language || 'zh-CN',
+      speed: speed || 1.0,
+    });
+
+    const data = {
+      id: uuidv4(),
+      ...result,
+      model: 'VITS + BERT + DeepSeek',
+    };
+
+    await prisma.project.create({
+      data: { userId: req.userId!, type: 'dubbing', title: `配音: ${(text || '').slice(0, 30)}`, status: 'completed', outputUrl: JSON.stringify(data) },
+    });
+
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: 'AI配音生成失败', detail: err.message });
+  }
 });
 
 // AI作曲
 aiRouter.post('/compose', authMiddleware, async (req: AuthRequest, res: Response) => {
-  const style = req.body.style || '流行';
-  res.json({
-    id: uuidv4(),
-    title: `AI作曲 - ${style}风格`,
-    style,
-    bpm: 120,
-    key: 'C Major',
-    structure: ['前奏', '主歌', '副歌', '间奏', '副歌', '尾声'],
-    midiUrl: '/uploads/demo/composition.mid',
-    audioUrl: '/uploads/demo/composition.mp3',
-    processingTime: '12.0s',
-  });
+  try {
+    const { style, mood, key, bpm, theme } = req.body;
+    const result = await generateComposition({
+      style: style || '流行',
+      mood: mood || '欢快',
+      key: key || 'C Major',
+      bpm: bpm || 120,
+      theme,
+    });
+
+    const data = {
+      id: uuidv4(),
+      ...result,
+      model: 'MusicGen + DeepSeek',
+    };
+
+    await prisma.project.create({
+      data: { userId: req.userId!, type: 'compose', title: result.title || `AI作曲 - ${style}`, status: 'completed', outputUrl: JSON.stringify(data) },
+    });
+    await prisma.user.update({ where: { id: req.userId! }, data: { credits: { decrement: 3 } } });
+
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: 'AI作曲生成失败', detail: err.message });
+  }
 });
 
 // AI MV
@@ -166,6 +228,7 @@ aiRouter.post('/short-video', authMiddleware, async (req: AuthRequest, res: Resp
 aiRouter.get('/models', (_req, res: Response) => {
   res.json({
     models: [
+      { id: 'deepseek-chat', name: 'DeepSeek-Chat', type: 'llm', description: 'DeepSeek大语言模型，驱动AI作曲、配音、翻唱方案生成' },
       { id: 'rvc-v2', name: 'RVC v2', type: 'voice_conversion', description: '检索式语音转换，高质量音色克隆' },
       { id: 'so-vits-svc-5', name: 'so-vits-svc 5.0', type: 'voice_synthesis', description: '歌声合成，支持中文/日文/英文' },
       { id: 'demucs-v4', name: 'Demucs v4', type: 'separation', description: 'Meta开源音轨分离模型' },

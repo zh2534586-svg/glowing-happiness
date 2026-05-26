@@ -9,6 +9,7 @@ const demoVoices = ['天后 - 流行女声', '古风女声 - 清韵', '摇滚男
 export default function AICover() {
   const [file, setFile] = useState<File | null>(null);
   const [selectedVoice, setSelectedVoice] = useState(demoVoices[0]);
+  const [songTitle, setSongTitle] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const user = useAuthStore((s) => s.user);
@@ -16,7 +17,7 @@ export default function AICover() {
   const handleCover = async () => {
     if (!file || !user) return;
     setLoading(true);
-    try { const { data } = await api.post('/ai/cover', { voice: selectedVoice }); setResult(data); } catch {}
+    try { const { data } = await api.post('/ai/cover', { songTitle, voice: selectedVoice }); setResult(data); } catch {}
     setLoading(false);
   };
 
@@ -38,6 +39,12 @@ export default function AICover() {
           </div>
         </div>
 
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">歌曲名称</label>
+          <input type="text" value={songTitle} onChange={(e) => setSongTitle(e.target.value)}
+            className="input-field" placeholder="输入要翻唱的歌曲名称..." />
+        </div>
+
         <div className="border-2 border-dashed border-primary-700/30 rounded-2xl p-10 text-center hover:border-primary-500/50 transition-all cursor-pointer">
           <Upload size={48} className="text-primary-400 mx-auto mb-4" />
           <p className="text-lg font-medium mb-2">上传原唱音频</p>
@@ -55,12 +62,22 @@ export default function AICover() {
         {!user && <p className="text-center text-sm text-amber-400">请先登录</p>}
 
         {result && (
-          <div className="glass-card !p-4 flex items-center justify-between">
-            <div>
-              <div className="font-medium">{result.originalSong} → <span className="text-primary-400">{result.coverVoice}</span></div>
-              <div className="text-xs text-gray-500">变调: {result.pitchShift} | 耗时: {result.processingTime}</div>
+          <div className="glass-card !p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium">{result.originalSong || songTitle} → <span className="text-primary-400">{result.coverVoice}</span></div>
+                <div className="text-xs text-gray-500">变调: {result.pitchShift || '自动'} | 耗时: {result.processingTime || '处理中'}</div>
+              </div>
+              <button className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center"><Play size={18} className="text-primary-400" /></button>
             </div>
-            <button className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center"><Play size={18} className="text-primary-400" /></button>
+            {result.arrangement && <p className="text-sm text-gray-400 border-t border-primary-700/20 pt-2">{result.arrangement}</p>}
+            {result.vocalEffects && (
+              <div className="flex flex-wrap gap-1">
+                {result.vocalEffects.map((fx: string, i: number) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-primary-500/10 text-primary-400">{fx}</span>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

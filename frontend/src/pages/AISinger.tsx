@@ -22,7 +22,7 @@ export default function AISinger() {
   const handleGenerate = async () => {
     if (!user) return;
     setLoading(true);
-    try { const { data } = await api.post('/ai/singer', { singer: selectedSinger.id, style: selectedStyle }); setResult(data); } catch {}
+    try { const { data } = await api.post('/ai/singer', { singer: selectedSinger.name, style: selectedStyle, description: selectedSinger.desc }); setResult(data); } catch {}
     setLoading(false);
   };
 
@@ -74,15 +74,35 @@ export default function AISinger() {
         {!user && <p className="text-center text-sm text-amber-400">请先登录</p>}
 
         {result && (
-          <div className="glass-card !p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center"><Music size={18} /></div>
-              <div>
-                <div className="font-medium">{result.singerName}</div>
-                <div className="text-xs text-gray-500">{result.range} | 耗时: {result.processingTime}</div>
+          <div className="glass-card !p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center"><Music size={18} /></div>
+                <div>
+                  <div className="font-medium">{result.singerName}</div>
+                  <div className="text-xs text-gray-500">{result.range} | 耗时: {result.processingTime}</div>
+                </div>
               </div>
+              <button className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center"><Play size={18} className="text-primary-400" /></button>
             </div>
-            <button className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center"><Play size={18} className="text-primary-400" /></button>
+            {result.timbre && <p className="text-sm text-gray-400 border-t border-primary-700/20 pt-2">{result.timbre}</p>}
+            {result.voiceParams && (
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(result.voiceParams).map(([key, val]) => (
+                  <div key={key} className="text-xs">
+                    <span className="text-gray-500 capitalize">{key}: </span>
+                    <span className="text-primary-400">{val as string}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {result.recommendedSongs && (
+              <div className="flex flex-wrap gap-1">
+                {result.recommendedSongs.map((s: string, i: number) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-accent-500/10 text-accent-400">{s}</span>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
