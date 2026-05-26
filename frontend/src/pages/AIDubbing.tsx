@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Zap, Play, Volume2 } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Zap, Play, Volume2, Square } from 'lucide-react';
 import ToolPage from '../components/ToolPage';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/client';
@@ -13,12 +13,28 @@ const voices = [
   { id: 'ko-female', name: '수진', desc: '한국어 여성 - 친근한', lang: 'ko-KR' },
 ];
 
+function speakText(text: string, lang: string, speed: number): SpeechSynthesisUtterance | null {
+  if (!('speechSynthesis' in window)) return null;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang;
+  utterance.rate = speed;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+  const voices = speechSynthesis.getVoices();
+  const match = voices.find(v => v.lang.startsWith(lang.split('-')[0]));
+  if (match) utterance.voice = match;
+  speechSynthesis.speak(utterance);
+  return utterance;
+}
+
 export default function AIDubbing() {
   const [text, setText] = useState('欢迎使用AI音乐平台，这是AI配音功能演示。');
   const [selectedVoice, setSelectedVoice] = useState(voices[0]);
   const [speed, setSpeed] = useState(1);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [speaking, setSpeaking] = useState(false);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const user = useAuthStore((s) => s.user);
 
   const handleDub = async () => {
@@ -26,6 +42,23 @@ export default function AIDubbing() {
     setLoading(true);
     try { const { data } = await api.post('/ai/dubbing', { text, voice: selectedVoice.name, language: selectedVoice.lang, speed }); setResult(data); } catch {}
     setLoading(false);
+  };
+
+  const handlePlay = () => {
+    if (speaking) {
+      speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    const targetText = result?.text || text;
+    const targetLang = result?.language || selectedVoice.lang;
+    const targetSpeed = result?.speed || speed;
+    const utterance = speakText(targetText, targetLang, targetSpeed);
+    if (!utterance) return;
+    setSpeaking(true);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    utteranceRef.current = utterance;
   };
 
   return (
@@ -63,10 +96,19 @@ export default function AIDubbing() {
             className="w-full accent-primary-500" />
         </div>
 
-        <button onClick={handleDub} disabled={!text || loading || !user}
-          className="gradient-btn w-full flex items-center justify-center gap-2 disabled:opacity-50">
-          <Zap size={18} /> {loading ? '合成中...' : '开始配音'}
-        </button>
+        <div className="flex gap-3">
+          <button onClick={handleDub} disabled={!text || loading || !user}
+            className="gradient-btn flex-1 flex items-center justify-center gap-2 disabled:opacity-50">
+            <Zap size={18} /> {loading ? 'AI分析中...' : 'AI配音'}
+          </button>
+          <button onClick={handlePlay} disabled={!text}
+            className={`px-6 rounded-xl flex items-center justify-center gap-2 transition-all ${
+              speaking ? 'bg-red-500/20 border border-red-500 text-red-400' : 'glass text-gray-400 hover:text-white'
+            }`}>
+            {speaking ? <Square size={18} /> : <Play size={18} />}
+            {speaking ? '停止' : '试听'}
+          </button>
+        </div>
 
         {!user && <p className="text-center text-sm text-amber-400">请先登录</p>}
 
@@ -78,7 +120,7 @@ export default function AIDubbing() {
                 <div className="text-sm text-gray-400 truncate max-w-md">"{result.text}"</div>
                 <div className="text-xs text-gray-500">时长: {result.duration} | 语速: {result.speed}x</div>
               </div>
-              <button className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center"><Play size={18} className="text-primary-400" /></button>
+              <button onClick={handlePlay} className={`w-10 h-10 rounded-lg flex items-center justify-center ${speaking ? 'bg-red-500/20' : 'bg-primary-500/20'}`}>{speaking ? <Square size={18} className="text-red-400" /> : <Play size={18} className="text-primary-400" />}</button>
             </div>
             {result.emotion && <span className="text-xs px-2 py-0.5 rounded-full bg-accent-500/10 text-accent-400 inline-block">{result.emotion}</span>}
             {result.pronunciationNotes && <p className="text-xs text-gray-500 border-t border-primary-700/20 pt-2">{result.pronunciationNotes}</p>}

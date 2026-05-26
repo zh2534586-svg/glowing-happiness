@@ -1,8 +1,18 @@
 import { useState } from 'react';
-import { Upload, Zap, Play, Disc3 } from 'lucide-react';
+import { Upload, Zap, Play, Disc3, Square } from 'lucide-react';
 import ToolPage from '../components/ToolPage';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/client';
+
+function playTTS(text: string, lang: string): SpeechSynthesisUtterance | null {
+  if (!('speechSynthesis' in window)) return null;
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang;
+  utterance.rate = 0.9;
+  speechSynthesis.speak(utterance);
+  return utterance;
+}
 
 const demoVoices = ['天后 - 流行女声', '古风女声 - 清韵', '摇滚男声 - 烈火', '二次元萌音'];
 
@@ -12,6 +22,7 @@ export default function AICover() {
   const [songTitle, setSongTitle] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [playing, setPlaying] = useState(false);
   const user = useAuthStore((s) => s.user);
 
   const handleCover = async () => {
@@ -19,6 +30,21 @@ export default function AICover() {
     setLoading(true);
     try { const { data } = await api.post('/ai/cover', { songTitle, voice: selectedVoice }); setResult(data); } catch {}
     setLoading(false);
+  };
+
+  const handlePlay = () => {
+    if (playing) {
+      speechSynthesis.cancel();
+      setPlaying(false);
+      return;
+    }
+    const desc = result?.arrangement || `翻唱方案: ${result?.originalSong || songTitle}, 目标音色: ${result?.coverVoice || selectedVoice}`;
+    const utterance = playTTS(desc, 'zh-CN');
+    if (utterance) {
+      setPlaying(true);
+      utterance.onend = () => setPlaying(false);
+      utterance.onerror = () => setPlaying(false);
+    }
   };
 
   return (
@@ -68,7 +94,7 @@ export default function AICover() {
                 <div className="font-medium">{result.originalSong || songTitle} → <span className="text-primary-400">{result.coverVoice}</span></div>
                 <div className="text-xs text-gray-500">变调: {result.pitchShift || '自动'} | 耗时: {result.processingTime || '处理中'}</div>
               </div>
-              <button className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center"><Play size={18} className="text-primary-400" /></button>
+              <button onClick={handlePlay} className={`w-10 h-10 rounded-lg flex items-center justify-center ${playing ? 'bg-red-500/20' : 'bg-primary-500/20'}`}>{playing ? <Square size={18} className="text-red-400" /> : <Play size={18} className="text-primary-400" />}</button>
             </div>
             {result.arrangement && <p className="text-sm text-gray-400 border-t border-primary-700/20 pt-2">{result.arrangement}</p>}
             {result.vocalEffects && (

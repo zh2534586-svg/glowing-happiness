@@ -1,8 +1,18 @@
 import { useState } from 'react';
-import { Zap, Play, UserCircle, Music } from 'lucide-react';
+import { Zap, Play, UserCircle, Music, Square } from 'lucide-react';
 import ToolPage from '../components/ToolPage';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/client';
+
+function playTTS(text: string, lang: string): SpeechSynthesisUtterance | null {
+  if (!('speechSynthesis' in window)) return null;
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang;
+  utterance.rate = 0.9;
+  speechSynthesis.speak(utterance);
+  return utterance;
+}
 
 const styles = ['流行', '摇滚', '民谣', 'R&B', '电子', '古风'];
 const singers = [
@@ -17,6 +27,7 @@ export default function AISinger() {
   const [selectedStyle, setSelectedStyle] = useState('流行');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [playing, setPlaying] = useState(false);
   const user = useAuthStore((s) => s.user);
 
   const handleGenerate = async () => {
@@ -24,6 +35,21 @@ export default function AISinger() {
     setLoading(true);
     try { const { data } = await api.post('/ai/singer', { singer: selectedSinger.name, style: selectedStyle, description: selectedSinger.desc }); setResult(data); } catch {}
     setLoading(false);
+  };
+
+  const handlePlay = () => {
+    if (playing) {
+      speechSynthesis.cancel();
+      setPlaying(false);
+      return;
+    }
+    const desc = result?.timbre || `${result?.singerName || 'AI歌手'}, ${result?.range || '全音域'}, 擅长${(result?.styles || [selectedStyle]).join('、')}`;
+    const utterance = playTTS(desc, 'zh-CN');
+    if (utterance) {
+      setPlaying(true);
+      utterance.onend = () => setPlaying(false);
+      utterance.onerror = () => setPlaying(false);
+    }
   };
 
   return (
@@ -83,7 +109,7 @@ export default function AISinger() {
                   <div className="text-xs text-gray-500">{result.range} | 耗时: {result.processingTime}</div>
                 </div>
               </div>
-              <button className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center"><Play size={18} className="text-primary-400" /></button>
+              <button onClick={handlePlay} className={`w-10 h-10 rounded-lg flex items-center justify-center ${playing ? 'bg-red-500/20' : 'bg-primary-500/20'}`}>{playing ? <Square size={18} className="text-red-400" /> : <Play size={18} className="text-primary-400" />}</button>
             </div>
             {result.timbre && <p className="text-sm text-gray-400 border-t border-primary-700/20 pt-2">{result.timbre}</p>}
             {result.voiceParams && (
