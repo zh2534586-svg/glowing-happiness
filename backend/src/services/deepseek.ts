@@ -169,10 +169,24 @@ ${params.theme ? `主题: ${params.theme}` : ''}
   "chordProgression": ["和弦1", "和弦2", "和弦3", "和弦4"],
   "melodyDescription": "旋律特征描述（80字以内）",
   "instrumentation": ["乐器1", "乐器2", "乐器3", "乐器4"],
-  "lyrics": "一段8-12句的原创歌词",
+  "lyrics": "一段8-12句的原创歌词，每句用换行分隔",
+  "melody": [
+    {"note": "C4", "syllable": "歌", "duration": 1},
+    {"note": "D4", "syllable": "词", "duration": 1},
+    {"note": "E4", "syllable": "第", "duration": 0.5},
+    ...
+  ],
   "arrangementTips": "编曲建议（50字以内）",
   "processingTime": "预计处理时间"
-}`;
+}
+
+重要要求：
+- melody数组的每个元素对应lyrics中的一个字（不含标点符号），syllable就是那个字
+- note使用国际音名（C D E F G A B）+ 八度数字（3-5），确保旋律在C3-B5范围内
+- duration是时值：1=四分音符, 0.5=八分音符, 2=二分音符, 0.25=十六分音符
+- 旋律要有起伏变化，符合${params.style}风格和${params.mood}情绪
+- 每个字都必须有对应的音符，一字一音
+- 确保melody数组长度与去除标点后的lyrics字数一致`;
 
   const response = await deepseek.chat.completions.create({
     model: CHAT_MODEL,
