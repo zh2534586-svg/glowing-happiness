@@ -26,6 +26,7 @@ interface MelodyNote {
 
 function singMelody(bpm: number, melody: MelodyNote[], chords: string[], onSyllableChange: (index: number) => void): { stop: () => void } {
   const ctx = new AudioContext();
+  ctx.resume(); // ensure running under browser autoplay policy
   const beatDuration = 60 / bpm;
   let stopped = false;
 
@@ -40,10 +41,10 @@ function singMelody(bpm: number, melody: MelodyNote[], chords: string[], onSylla
 
   // Master gain
   const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.6;
+  masterGain.gain.value = 0.8;
   masterGain.connect(ctx.destination);
 
-  // Build vocal chain: saw → formant filters → gain envelope
+  // Build vocal chain: saw → (formant wet + dry parallel) → gain envelope
   function singNote(freq: number, startTime: number, duration: number, vibratoDepth: number = 0.3) {
     if (stopped) return;
 
@@ -63,40 +64,53 @@ function singMelody(bpm: number, melody: MelodyNote[], chords: string[], onSylla
       lfo.stop(startTime + duration);
     }
 
-    // Formant filters (female voice approximation)
+    // Formant filters — wider bandwidth so the signal passes through
     const f1 = ctx.createBiquadFilter();
     f1.type = 'bandpass';
     f1.frequency.value = 750;
-    f1.Q.value = 8;
+    f1.Q.value = 3;
 
     const f2 = ctx.createBiquadFilter();
     f2.type = 'bandpass';
     f2.frequency.value = 1200;
-    f2.Q.value = 6;
+    f2.Q.value = 2.5;
 
     const f3 = ctx.createBiquadFilter();
     f3.type = 'bandpass';
     f3.frequency.value = 2800;
-    f3.Q.value = 4;
+    f3.Q.value = 2;
 
     const f4 = ctx.createBiquadFilter();
     f4.type = 'highshelf';
     f4.frequency.value = 4000;
-    f4.gain.value = -6;
+    f4.gain.value = -3;
 
-    // Amp envelope
+    // Wet/dry mix
+    const wetGain = ctx.createGain();
+    wetGain.gain.value = 0.6;
+    const dryGain = ctx.createGain();
+    dryGain.gain.value = 0.15;
+
+    // Amp envelope — apply to a combined gain node
     const noteGain = ctx.createGain();
     const attack = Math.min(0.03, duration * 0.15);
     noteGain.gain.setValueAtTime(0, startTime);
-    noteGain.gain.linearRampToValueAtTime(0.25, startTime + attack);
-    noteGain.gain.setValueAtTime(0.25, startTime + duration * 0.7);
+    noteGain.gain.linearRampToValueAtTime(0.55, startTime + attack);
+    noteGain.gain.setValueAtTime(0.5, startTime + duration * 0.7);
     noteGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
 
+    // Wet path: saw → formant filters → wetGain → noteGain → master
     osc.connect(f1);
     f1.connect(f2);
     f2.connect(f3);
     f3.connect(f4);
-    f4.connect(noteGain);
+    f4.connect(wetGain);
+    wetGain.connect(noteGain);
+
+    // Dry path: saw → dryGain → noteGain → master (preserves brightness)
+    osc.connect(dryGain);
+    dryGain.connect(noteGain);
+
     noteGain.connect(masterGain);
 
     osc.start(startTime);
