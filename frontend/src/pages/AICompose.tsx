@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Zap, Play, Music, Square } from 'lucide-react';
 import ToolPage from '../components/ToolPage';
 import { useAuthStore } from '../stores/authStore';
@@ -8,7 +8,6 @@ const styles = ['流行', '古典', '电子', '爵士', 'R&B', '摇滚', '民谣
 const moods = ['欢快', '舒缓', '激昂', '忧伤', '浪漫', '神秘', '元气', '治愈'];
 const keys = ['C Major', 'D Major', 'E Major', 'F Major', 'G Major', 'A Major', 'A Minor', 'E Minor'];
 
-// Note-to-frequency: C3=130.81, each semitone *1.05946
 function noteToFreq(note: string): number {
   const map: Record<string, number> = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };
   const match = note.match(/^([A-G])(#?)(\d)$/);
@@ -24,13 +23,43 @@ interface MelodyNote {
   duration: number;
 }
 
-function singMelody(bpm: number, melody: MelodyNote[], chords: string[], onSyllableChange: (index: number) => void): { stop: () => void } {
+// Preload voices — call early so getVoices() is populated when needed
+function preloadVoices(): Promise<SpeechSynthesisVoice[]> {
+  return new Promise((resolve) => {
+    const voices = speechSynthesis.getVoices();
+    if (voices.length > 0) { resolve(voices); return; }
+    speechSynthesis.onvoiceschanged = () => resolve(speechSynthesis.getVoices());
+  });
+}
+
+function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  // Prefer a Chinese voice with good quality
+  const zhVoices = voices.filter((v) => v.lang.startsWith('zh'));
+  // Try to find a female-sounding voice (usually better for singing)
+  const female = zhVoices.find((v) => v.name.includes('Female') || v.name.includes('Ting') || v.name.includes('Yating') || v.name.includes('Xia') || v.name.includes('Ya'));
+  if (female) return female;
+  if (zhVoices.length > 0) return zhVoices[0];
+  // Fallback to any voice
+  return voices[0] || null;
+}
+
+// Map a musical note frequency to SpeechSynthesis pitch (0.1 - 2.0, where 1.0 ≈ C4 ≈ 262Hz)
+function freqToSSPitch(freq: number): number {
+  return Math.min(2.0, Math.max(0.3, freq / 261.6));
+}
+
+function singMelody(
+  bpm: number, melody: MelodyNote[], chords: string[],
+  onSyllableChange: (index: number) => void,
+  voices: SpeechSynthesisVoice[],
+): { stop: () => void } {
   const ctx = new AudioContext();
-  ctx.resume(); // ensure running under browser autoplay policy
+  ctx.resume();
   const beatDuration = 60 / bpm;
   let stopped = false;
+  const voice = pickVoice(voices);
 
-  // Chord accompaniment (soft pad)
+  // ── Chord accompaniment (Web Audio soft pad) ──
   const chordMap: Record<string, number[]> = {};
   chords?.forEach((chord) => {
     const root = chord.replace(/m7?|7|dim|aug|sus\d?/g, '');
@@ -39,94 +68,17 @@ function singMelody(bpm: number, melody: MelodyNote[], chords: string[], onSylla
     else chordMap[chord] = [baseFreq, baseFreq * 1.26, baseFreq * 1.498];
   });
 
-  // Master gain
   const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.8;
+  masterGain.gain.value = 0.3;
   masterGain.connect(ctx.destination);
 
-  // Build vocal chain: saw → (formant wet + dry parallel) → gain envelope
-  function singNote(freq: number, startTime: number, duration: number, vibratoDepth: number = 0.3) {
-    if (stopped) return;
-
-    const osc = ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.value = freq;
-
-    // Vibrato LFO
-    if (duration > 0.15) {
-      const lfo = ctx.createOscillator();
-      const lfoGain = ctx.createGain();
-      lfo.frequency.value = 5.5;
-      lfoGain.gain.value = freq * vibratoDepth * 0.008;
-      lfo.connect(lfoGain);
-      lfoGain.connect(osc.frequency);
-      lfo.start(startTime);
-      lfo.stop(startTime + duration);
-    }
-
-    // Formant filters — wider bandwidth so the signal passes through
-    const f1 = ctx.createBiquadFilter();
-    f1.type = 'bandpass';
-    f1.frequency.value = 750;
-    f1.Q.value = 3;
-
-    const f2 = ctx.createBiquadFilter();
-    f2.type = 'bandpass';
-    f2.frequency.value = 1200;
-    f2.Q.value = 2.5;
-
-    const f3 = ctx.createBiquadFilter();
-    f3.type = 'bandpass';
-    f3.frequency.value = 2800;
-    f3.Q.value = 2;
-
-    const f4 = ctx.createBiquadFilter();
-    f4.type = 'highshelf';
-    f4.frequency.value = 4000;
-    f4.gain.value = -3;
-
-    // Wet/dry mix
-    const wetGain = ctx.createGain();
-    wetGain.gain.value = 0.6;
-    const dryGain = ctx.createGain();
-    dryGain.gain.value = 0.15;
-
-    // Amp envelope — apply to a combined gain node
-    const noteGain = ctx.createGain();
-    const attack = Math.min(0.03, duration * 0.15);
-    noteGain.gain.setValueAtTime(0, startTime);
-    noteGain.gain.linearRampToValueAtTime(0.55, startTime + attack);
-    noteGain.gain.setValueAtTime(0.5, startTime + duration * 0.7);
-    noteGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-
-    // Wet path: saw → formant filters → wetGain → noteGain → master
-    osc.connect(f1);
-    f1.connect(f2);
-    f2.connect(f3);
-    f3.connect(f4);
-    f4.connect(wetGain);
-    wetGain.connect(noteGain);
-
-    // Dry path: saw → dryGain → noteGain → master (preserves brightness)
-    osc.connect(dryGain);
-    dryGain.connect(noteGain);
-
-    noteGain.connect(masterGain);
-
-    osc.start(startTime);
-    osc.stop(startTime + duration + 0.05);
-  }
-
-  // Play chord pad
   function playChordBg() {
     if (stopped || !chords?.length) return;
     const totalDur = melody.reduce((sum, n) => sum + n.duration * beatDuration, 0);
     const barBeats = 4;
     const bars = Math.ceil(totalDur / (barBeats * beatDuration));
-    const chordCycle = chords;
-
     for (let bar = 0; bar < bars; bar++) {
-      const chord = chordCycle[bar % chordCycle.length];
+      const chord = chords[bar % chords.length];
       const freqs = chordMap[chord] || [261, 329, 392];
       freqs.forEach((f) => {
         if (stopped) return;
@@ -147,30 +99,46 @@ function singMelody(bpm: number, melody: MelodyNote[], chords: string[], onSylla
     }
   }
 
-  // Schedule melody notes
-  let time = ctx.currentTime + 0.15;
+  // ── Vocal melody via SpeechSynthesis (real human TTS voice) ──
+  const timers: number[] = [];
+  let time = ctx.currentTime + 0.2;
   let syllableIdx = 0;
 
   melody.forEach((mn) => {
     const freq = noteToFreq(mn.note);
     const dur = mn.duration * beatDuration;
-    singNote(freq, time, dur, mn.duration > 0.5 ? 0.3 : 0.1);
-
+    const pitch = freqToSSPitch(freq);
     const idx = syllableIdx;
-    const noteTime = time;
-    const cb = () => onSyllableChange(idx);
-    setTimeout(cb, Math.max(0, (noteTime - ctx.currentTime) * 1000));
+    const delayMs = Math.max(0, (time - ctx.currentTime) * 1000);
 
+    const timer = window.setTimeout(() => {
+      if (stopped) return;
+      const u = new SpeechSynthesisUtterance(mn.syllable);
+      if (voice) u.voice = voice;
+      u.pitch = pitch;
+      u.rate = 0.82;
+      u.volume = 1;
+
+      // Cancel any previous utterance before starting this one
+      // (speechSynthesis queues by default; we want one-at-a-time for singing)
+      speechSynthesis.cancel();
+      onSyllableChange(idx);
+      speechSynthesis.speak(u);
+    }, delayMs);
+
+    timers.push(timer);
     time += dur;
     syllableIdx++;
   });
 
-  // Start chord pad slightly after first note
+  // Start chords slightly after first note
   setTimeout(() => playChordBg(), 50);
 
   return {
     stop: () => {
       stopped = true;
+      speechSynthesis.cancel();
+      timers.forEach(clearTimeout);
       ctx.close();
       onSyllableChange(-1);
     },
@@ -186,8 +154,12 @@ export default function AICompose() {
   const [result, setResult] = useState<any>(null);
   const [playing, setPlaying] = useState(false);
   const [currentSyllable, setCurrentSyllable] = useState(-1);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const playerRef = useRef<{ stop: () => void } | null>(null);
   const user = useAuthStore((s) => s.user);
+
+  // Preload TTS voices on mount
+  useEffect(() => { preloadVoices().then(setVoices); }, []);
 
   const handleCompose = async () => {
     if (!user) return;
@@ -217,6 +189,7 @@ export default function AICompose() {
       melodyNotes,
       result.chordProgression || [],
       (idx: number) => setCurrentSyllable(idx),
+      voices,
     );
     playerRef.current = player;
 
@@ -227,7 +200,7 @@ export default function AICompose() {
       setPlaying(false);
       setCurrentSyllable(-1);
     }, totalMs);
-  }, [playing, result, bpm]);
+  }, [playing, result, bpm, voices]);
 
   return (
     <ToolPage title="AI作曲" description="AI自动生成原创旋律、和声和编曲，支持多种音乐风格" icon="🎼" model="MusicGen + MuseGAN" tech={['旋律生成', '和声编排', '多风格']}>
