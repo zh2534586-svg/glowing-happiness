@@ -4,13 +4,13 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { CompositionResult, AudioOutput } from './types';
 import { generateMidiBuffer, calculateDuration } from './midiGenerator';
+import { noteToFreq, chordFreqs, chordRoot } from './musicUtils';
 
 const execFileAsync = promisify(execFile);
 
-const SOUNDFONT_PATH = '/usr/share/soundfonts/MuseScore_General.sf2';
-const MIDI_OUTPUT_DIR = '/var/www/aimusic/backend/uploads/generated';
+const SOUNDFONT_PATH = process.env.SOUNDFONT_PATH || '/usr/share/soundfonts/MuseScore_General.sf2';
+const MIDI_OUTPUT_DIR = process.env.MIDI_OUTPUT_DIR || '/var/www/aimusic/backend/uploads/generated';
 
-// Ensure output directory exists
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
@@ -43,8 +43,8 @@ export async function composeAudio(
       ], { timeout: 60000 });
       instrumentalRendered = true;
     }
-  } catch {
-    // fluidsynth not available — skip instrumental WAV, frontend will use Web Audio
+  } catch (err: any) {
+    console.warn('fluidsynth rendering failed:', err.message);
   }
 
   // 4. Try to convert WAV → MP3 via ffmpeg
@@ -56,8 +56,8 @@ export async function composeAudio(
       await execFileAsync('ffmpeg', [
         '-i', wavPath, '-c:a', 'libmp3lame', '-b:a', '192k', '-y', mp3Path,
       ], { timeout: 30000 });
-    } catch {
-      // ffmpeg not available — skip MP3
+    } catch (err: any) {
+      console.warn('ffmpeg MP3 conversion failed:', err.message);
     }
   }
 
@@ -76,22 +76,6 @@ export function synthesizeInstrumentalWav(composition: CompositionResult): Buffe
   const durationSec = calculateDuration(composition) + 2; // 2s padding
   const numSamples = Math.floor(sampleRate * durationSec);
   const buffer = Buffer.alloc(44 + numSamples * 4); // 16-bit stereo
-
-  const noteMap: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-
-  function noteToFreq(note: string): number {
-    const match = note.match(/^([A-G])(#?)(\d)$/);
-    if (!match) return 440;
-    const semitone = noteMap[match[1]] + (match[2] ? 1 : 0) + (parseInt(match[3]) - 4) * 12;
-    return 440 * Math.pow(2, semitone / 12);
-  }
-
-  function chordRoots(chord: string): number[] {
-    const root = chord.replace(/m7?|7|dim|aug|sus\d?/g, '');
-    const base = noteToFreq(root + '3');
-    if (chord.includes('m')) return [base, base * 1.189, base * 1.498];
-    return [base, base * 1.26, base * 1.498];
-  }
 
   // WAV header
   buffer.write('RIFF', 0);
@@ -125,13 +109,13 @@ export function synthesizeInstrumentalWav(composition: CompositionResult): Buffe
     // Chord pad
     const barIdx = Math.floor(t / (barBeats * beatDur));
     const chord = chords[barIdx % chords.length];
-    const freqs = chordRoots(chord);
+    const freqs = chordFreqs(chord);
     freqs.forEach((f) => {
       sample += 0.06 * Math.sin(2 * Math.PI * f * t);
     });
 
-    // Bass
-    const rootFreq = noteToFreq(chord.replace(/m7?|7|dim|aug|sus\d?/g, '') + '2');
+    // Bass (one octave below)
+    const rootFreq = noteToFreq(chordRoot(chord) + '2');
     sample += 0.05 * Math.sin(2 * Math.PI * rootFreq * t);
 
     writeSample(i, sample);

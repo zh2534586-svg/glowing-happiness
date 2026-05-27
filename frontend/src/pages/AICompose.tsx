@@ -4,23 +4,10 @@ import ToolPage from '../components/ToolPage';
 import AudioPlayer from '../components/AudioPlayer';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/client';
+import { noteToFreq, freqToSSPitch, chordFreqs } from '../utils/musicUtils';
 
 const styles = ['流行', '古风', '国风', '电子', '摇滚', '民谣', 'R&B', '爵士', '嘻哈', '古典', '轻音乐', '舞曲'];
 const moods = ['欢快', '舒缓', '激昂', '忧伤', '浪漫', '神秘', '元气', '治愈'];
-
-// ── Audio synthesis helpers (browser-side playback) ──
-
-function noteToFreq(note: string): number {
-  const map: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-  const match = note.match(/^([A-G])(#?)(\d)$/);
-  if (!match) return 440;
-  const semitone = map[match[1]] + (match[2] ? 1 : 0) + (parseInt(match[3]) - 4) * 12;
-  return 440 * Math.pow(2, semitone / 12);
-}
-
-function freqToSSPitch(freq: number): number {
-  return Math.min(2.0, Math.max(0.3, freq / 261.6));
-}
 
 function preloadVoices(): Promise<SpeechSynthesisVoice[]> {
   return new Promise((resolve) => {
@@ -82,16 +69,14 @@ function playAndRecord(
 
   const beatDuration = 60 / (result.bpm || 120);
   let stopped = false;
+  const allOscillators: OscillatorNode[] = [];
   const voice = pickVoice(voices);
 
   // Chord accompaniment (mixed into recording)
   const chordMap: Record<string, number[]> = {};
   const chords = result.chordProgression || [];
   chords.forEach((chord) => {
-    const root = chord.replace(/m7?|7|dim|aug|sus\d?/g, '');
-    const baseFreq = noteToFreq(root + '3');
-    if (chord.includes('m')) chordMap[chord] = [baseFreq, baseFreq * 1.189, baseFreq * 1.498];
-    else chordMap[chord] = [baseFreq, baseFreq * 1.26, baseFreq * 1.498];
+    chordMap[chord] = chordFreqs(chord);
   });
 
   const masterGain = ctx.createGain();
@@ -122,6 +107,7 @@ function playAndRecord(
         gain.connect(masterGain);
         osc.start(start);
         osc.stop(start + dur);
+        allOscillators.push(osc);
       });
     }
   }
@@ -187,8 +173,9 @@ function playAndRecord(
     stop: () => {
       stopped = true;
       speechSynthesis.cancel();
+      allOscillators.forEach((osc) => { try { osc.stop(); } catch { /* already stopped */ } });
       if (mediaRecorder.state === 'recording') mediaRecorder.stop();
-      ctx.close();
+      try { ctx.close(); } catch { /* already closed */ }
       onSyllableChange(-1);
     },
   };
@@ -215,6 +202,9 @@ export default function AICompose() {
   const user = useAuthStore((s) => s.user);
 
   useEffect(() => { preloadVoices().then(setVoices); }, []);
+
+  // Cleanup playback on unmount
+  useEffect(() => () => { playerRef.current?.stop(); }, []);
 
   const handleCompose = async () => {
     if (!user) return;

@@ -1,23 +1,6 @@
 import MidiWriter = require('midi-writer-js');
 import { CompositionResult, MelodyNote } from './types';
-
-const NOTE_MAP: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-
-function noteNameToMidi(note: string): number {
-  const match = note.match(/^([A-G])(#?)(\d)$/);
-  if (!match) return 60;
-  const [, name, sharp, octave] = match;
-  return NOTE_MAP[name] + (sharp ? 1 : 0) + (parseInt(octave) + 1) * 12;
-}
-
-// Chord root → MIDI notes (triads)
-function chordToMidiNotes(chord: string): number[] {
-  const rootName = chord.replace(/m7?|7|dim|aug|sus\d?/g, '');
-  const root = noteNameToMidi(rootName + '3');
-  const isMinor = chord.includes('m') && !chord.includes('dim');
-  if (isMinor) return [root, root + 3, root + 7];
-  return [root, root + 4, root + 7];
-}
+import { noteNameToMidi, chordMidiNotes, chordRoot } from './musicUtils';
 
 // Standard drum pattern on MIDI channel 10
 function drumPattern(bpm: number, totalTicks: number): MidiWriter.NoteEvent[] {
@@ -79,7 +62,7 @@ export function generateMidiBuffer(comp: CompositionResult): Buffer {
   const barTicks = beatTicks * 4; // each chord lasts one bar (4 beats)
   for (let bar = 0; bar * barTicks < totalTicks + barTicks; bar++) {
     const chord = chords[bar % chords.length];
-    const notes = chordToMidiNotes(chord);
+    const notes = chordMidiNotes(chord);
     notes.forEach((midiNote) => {
       chordTrack.addEvent(new MidiWriter.NoteEvent({
         pitch: [midiNote],
@@ -97,7 +80,7 @@ export function generateMidiBuffer(comp: CompositionResult): Buffer {
 
   for (let bar = 0; bar * barTicks < totalTicks + barTicks; bar++) {
     const chord = chords[bar % chords.length];
-    const rootMidi = noteNameToMidi(chord.replace(/m7?|7|dim|aug|sus\d?/g, '') + '2');
+    const rootMidi = noteNameToMidi(chordRoot(chord) + '2');
     // Simple bass pattern: root on beats 1, 2.5, 3, 3.5
     [0, beatTicks * 1.5, beatTicks * 2, beatTicks * 2.5].forEach((offset) => {
       bassTrack.addEvent(new MidiWriter.NoteEvent({
