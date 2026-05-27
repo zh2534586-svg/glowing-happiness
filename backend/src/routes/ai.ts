@@ -170,13 +170,14 @@ aiRouter.post('/dubbing', authMiddleware, async (req: AuthRequest, res: Response
 // AI作曲
 aiRouter.post('/compose', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { style, mood, key, bpm, theme } = req.body;
+    const { style, mood, key, bpm, theme, customLyrics } = req.body;
     const result = await generateComposition({
       style: style || '流行',
       mood: mood || '欢快',
       key: key || 'C Major',
       bpm: bpm || 120,
       theme,
+      customLyrics,
     });
 
     const data = {

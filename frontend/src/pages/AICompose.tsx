@@ -150,6 +150,9 @@ export default function AICompose() {
   const [mood, setMood] = useState('欢快');
   const [key, setKey] = useState('C Major');
   const [bpm, setBpm] = useState(120);
+  const [theme, setTheme] = useState('');
+  const [customLyrics, setCustomLyrics] = useState('');
+  const [showLyricsInput, setShowLyricsInput] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [playing, setPlaying] = useState(false);
@@ -165,7 +168,14 @@ export default function AICompose() {
     if (!user) return;
     setLoading(true);
     setCurrentSyllable(-1);
-    try { const { data } = await api.post('/ai/compose', { style, mood, key, bpm }); setResult(data); } catch {}
+    try {
+      const { data } = await api.post('/ai/compose', {
+        style, mood, key, bpm,
+        theme: theme.trim() || undefined,
+        customLyrics: customLyrics.trim() || undefined,
+      });
+      setResult(data);
+    } catch {}
     setLoading(false);
   };
 
@@ -239,6 +249,40 @@ export default function AICompose() {
           </div>
         </div>
 
+        {/* Theme / inspiration input */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            创作主题 <span className="text-gray-500 font-normal">（可选，描述你想创作的内容）</span>
+          </label>
+          <input
+            type="text"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value)}
+            placeholder="例如：夏日海边、星空下的思念、都市夜归人..."
+            className="input-field"
+          />
+        </div>
+
+        {/* Custom lyrics toggle + textarea */}
+        <div>
+          <button
+            onClick={() => { setShowLyricsInput(!showLyricsInput); if (!showLyricsInput) setCustomLyrics(''); }}
+            className={`text-sm flex items-center gap-2 transition-all ${showLyricsInput ? 'text-primary-400' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            <span className={`text-lg leading-none ${showLyricsInput ? 'opacity-100' : 'opacity-50'}`}>📝</span>
+            {showLyricsInput ? '隐藏自定义歌词' : '自定义歌词（可选，留空则由AI生成）'}
+          </button>
+          {showLyricsInput && (
+            <textarea
+              value={customLyrics}
+              onChange={(e) => setCustomLyrics(e.target.value)}
+              placeholder="输入你的歌词，每句一行，AI将为你的歌词谱曲...&#10;例如：&#10;月光洒在窗台边&#10;思念随风飘很远&#10;你的笑容在眼前&#10;..."
+              rows={6}
+              className="input-field mt-2 resize-none"
+            />
+          )}
+        </div>
+
         <div className="flex gap-3">
           <button onClick={handleCompose} disabled={loading || !user}
             className="gradient-btn flex-1 flex items-center justify-center gap-2 disabled:opacity-50">
@@ -264,12 +308,22 @@ export default function AICompose() {
                 <div className="flex items-center gap-2"><Music size={18} className="text-primary-400" /><span className="font-medium">{result.title}</span></div>
                 <button onClick={handlePlay} className={`w-10 h-10 rounded-lg flex items-center justify-center ${playing ? 'bg-red-500/20' : 'bg-primary-500/20'}`}>{playing ? <Square size={18} className="text-red-400" /> : <Play size={18} className="text-primary-400" />}</button>
               </div>
+
+              {/* Style & meta tags */}
               <div className="flex flex-wrap gap-2 text-xs mb-3">
+                {result.style && <span className="px-3 py-1 rounded-full bg-primary-500/20 text-primary-300 font-medium">{result.style}</span>}
                 <span className="px-3 py-1 rounded-full bg-primary-500/10 text-primary-400">{result.key}</span>
                 <span className="px-3 py-1 rounded-full bg-primary-500/10 text-primary-400">{result.bpm} BPM</span>
                 <span className="px-3 py-1 rounded-full bg-accent-500/10 text-accent-400">{result.mood}</span>
-                <span className="px-3 py-1 rounded-full bg-primary-500/10 text-primary-400">耗时: {result.processingTime}</span>
               </div>
+
+              {/* Song structure */}
+              {result.songStructure && (
+                <div className="text-xs text-gray-400 mb-3 px-2 py-2 rounded-lg bg-dark-100/50">
+                  <span className="text-gray-500">歌曲结构</span> {result.songStructure}
+                </div>
+              )}
+
               <div className="mt-3 flex flex-wrap gap-2">
                 {result.structure?.map((s: string, i: number) => (
                   <span key={i} className="text-xs px-2 py-1 rounded bg-dark-100 text-gray-400">{s}</span>
@@ -278,6 +332,7 @@ export default function AICompose() {
               {result.melodyDescription && <p className="text-sm text-gray-400 mt-3 border-t border-primary-700/20 pt-2">{result.melodyDescription}</p>}
               {result.chordProgression && (
                 <div className="flex flex-wrap gap-2 mt-2">
+                  <span className="text-xs text-gray-500">和弦进行</span>
                   {result.chordProgression.map((c: string, i: number) => (
                     <span key={i} className="text-xs px-2 py-1 rounded bg-accent-500/10 text-accent-400">{c}</span>
                   ))}
@@ -295,6 +350,7 @@ export default function AICompose() {
                   <div className="text-xs text-gray-500 mb-2 flex items-center gap-2">
                     <span>AI 演唱</span>
                     {playing && <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />}
+                    <span className="text-gray-600 ml-auto">{result.melody.length}个音符</span>
                   </div>
                   <div className="flex flex-wrap gap-x-1 gap-y-1 leading-loose">
                     {result.melody.map((mn: MelodyNote, i: number) => (
@@ -313,8 +369,12 @@ export default function AICompose() {
                   </div>
                   {result.lyrics && (
                     <div className="mt-3 pt-2 border-t border-dark-100">
-                      <div className="text-xs text-gray-500 mb-1">完整歌词</div>
-                      <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-line">{result.lyrics}</p>
+                      <div className="text-xs text-gray-500 mb-2">完整歌词</div>
+                      <div className="text-sm text-gray-300 leading-relaxed whitespace-pre-line bg-dark-100/30 rounded-lg p-3 max-h-60 overflow-y-auto">
+                        {result.lyrics.split('\n').map((line: string, i: number) => (
+                          <p key={i} className={line.trim() ? 'mb-1' : 'h-3'}>{line.trim() || ' '}</p>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -322,8 +382,19 @@ export default function AICompose() {
 
               {!result.melody && result.lyrics && (
                 <div className="mt-3 border-t border-primary-700/20 pt-3">
-                  <div className="text-xs text-gray-500 mb-1">AI生成歌词</div>
-                  <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">{result.lyrics}</p>
+                  <div className="text-xs text-gray-500 mb-2">AI生成歌词</div>
+                  <div className="text-sm text-gray-300 leading-relaxed whitespace-pre-line bg-dark-100/30 rounded-lg p-3">
+                    {result.lyrics.split('\n').map((line: string, i: number) => (
+                      <p key={i} className={line.trim() ? 'mb-1' : 'h-3'}>{line.trim() || ' '}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {result.arrangementTips && (
+                <div className="mt-3 border-t border-primary-700/20 pt-3">
+                  <div className="text-xs text-gray-500 mb-1">编曲建议</div>
+                  <p className="text-sm text-gray-400">{result.arrangementTips}</p>
                 </div>
               )}
             </div>
