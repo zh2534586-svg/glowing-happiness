@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  username  String   @unique
+  password  String
+  avatar    String?
+  role      String   @default("user")
+  plan      String   @default("free")
+  credits   Int      @default(10)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payments      Payment[]
+  subscriptions Subscription[]
+  apiKeys       ApiKey[]
+  projects      Project[]
+}
+
+model Payment {
+  id          String   @id @default(uuid())
+  userId      String
+  amount      Float
+  currency    String   @default("CNY")
+  method      String
+  status      String   @default("pending")
+  orderNo     String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Subscription {
+  id        String   @id @default(uuid())
+  userId    String
+  plan      String
+  status    String   @default("active")
+  startDate DateTime @default(now())
+  endDate   DateTime
+  autoRenew Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model ApiKey {
+  id        String   @id @default(uuid())
+  userId    String
+  key       String   @unique
+  name      String
+  rateLimit Int      @default(1000)
+  createdAt DateTime @default(now())
+  lastUsed  DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Project {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  status    String   @default("processing")
+  inputUrl  String?
+  outputUrl String?
+  config    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model VoiceModel {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  category    String
+  price       Float    @default(0)
+  previewUrl  String?
+  seller      String?
+  rating      Float    @default(0)
+  downloads   Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model CopyrightRecord {
+  id        String   @id @default(uuid())
+  userId    String
+  contentHash String
+  title     String
+  status    String   @default("pending")
+  txHash    String?
+  createdAt DateTime @default(now())
+}
