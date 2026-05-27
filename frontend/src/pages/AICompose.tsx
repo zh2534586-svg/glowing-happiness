@@ -99,37 +99,70 @@ function singMelody(
     }
   }
 
-  // ── Vocal melody via SpeechSynthesis (real human TTS voice) ──
-  const timers: number[] = [];
-  let time = ctx.currentTime + 0.2;
-  let syllableIdx = 0;
+  // ── Vocal melody via SpeechSynthesis — chained onend for smooth flow ──
+  // We build phrases of 2-4 chars so the TTS engine has phonetic context,
+  // then chain phrase by phrase for continuous, clear singing.
+  const phraseGap = (60 / bpm) * 200; // ms pause between phrases, scaled by tempo
+  let phraseIdx = 0;
 
-  melody.forEach((mn) => {
-    const freq = noteToFreq(mn.note);
-    const dur = mn.duration * beatDuration;
-    const pitch = freqToSSPitch(freq);
-    const idx = syllableIdx;
-    const delayMs = Math.max(0, (time - ctx.currentTime) * 1000);
+  function speakNextPhrase() {
+    if (stopped) return;
 
-    const timer = window.setTimeout(() => {
+    // Collect 2-4 syllables into one utterance for better TTS articulation
+    const chars: string[] = [];
+    let startIdx = phraseIdx;
+    while (phraseIdx < melody.length && chars.length < 4) {
+      chars.push(melody[phraseIdx].syllable);
+      phraseIdx++;
+    }
+
+    if (chars.length === 0) return;
+
+    // Build utterance text with spaces between characters for clarity
+    const text = chars.join(' ');
+    const u = new SpeechSynthesisUtterance(text);
+    if (voice) u.voice = voice;
+
+    // Use average pitch of the phrase
+    const avgPitch = chars.reduce((sum, _, i) => {
+      return sum + freqToSSPitch(noteToFreq(melody[startIdx + i].note));
+    }, 0) / chars.length;
+    u.pitch = avgPitch;
+    u.rate = 0.88;
+    u.volume = 1;
+
+    u.onstart = () => {
+      onSyllableChange(startIdx);
+    };
+
+    // Fire syllable highlights as each character is spoken (estimated)
+    // SpeechSynthesis boundary events give word-level timing
+    let charIdx = 0;
+    u.onboundary = (e) => {
+      if (e.charIndex !== undefined && e.charIndex > 0) {
+        // Count spaces to estimate which character we're on
+        const beforeText = text.substring(0, e.charIndex);
+        const spaceCount = (beforeText.match(/ /g) || []).length;
+        onSyllableChange(startIdx + spaceCount);
+      }
+    };
+
+    u.onend = () => {
       if (stopped) return;
-      const u = new SpeechSynthesisUtterance(mn.syllable);
-      if (voice) u.voice = voice;
-      u.pitch = pitch;
-      u.rate = 0.82;
-      u.volume = 1;
+      if (phraseIdx < melody.length) {
+        // Brief gap between phrases for musical phrasing
+        setTimeout(speakNextPhrase, phraseGap);
+      } else {
+        onSyllableChange(-1);
+      }
+    };
 
-      // Cancel any previous utterance before starting this one
-      // (speechSynthesis queues by default; we want one-at-a-time for singing)
-      speechSynthesis.cancel();
-      onSyllableChange(idx);
-      speechSynthesis.speak(u);
-    }, delayMs);
+    // Cancel is only used on stop(), never between syllables
+    speechSynthesis.speak(u);
+  }
 
-    timers.push(timer);
-    time += dur;
-    syllableIdx++;
-  });
+  // Small initial delay then start
+  setTimeout(speakNextPhrase, 150);
 
   // Start chords slightly after first note
   setTimeout(() => playChordBg(), 50);
@@ -138,7 +171,6 @@ function singMelody(
     stop: () => {
       stopped = true;
       speechSynthesis.cancel();
-      timers.forEach(clearTimeout);
       ctx.close();
       onSyllableChange(-1);
     },
