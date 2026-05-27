@@ -4,7 +4,7 @@ import ToolPage from '../components/ToolPage';
 import { useAuthStore } from '../stores/authStore';
 import api from '../api/client';
 
-const styles = ['流行', '古典', '电子', '爵士', 'R&B', '摇滚', '民谣', '嘻哈'];
+const styles = ['流行', '古风', '国风', '电子', '摇滚', '民谣', 'R&B', '爵士', '嘻哈', '古典', '轻音乐', '舞曲', '布鲁斯', '雷鬼', '放克', '金属'];
 const moods = ['欢快', '舒缓', '激昂', '忧伤', '浪漫', '神秘', '元气', '治愈'];
 const keys = ['C Major', 'D Major', 'E Major', 'F Major', 'G Major', 'A Major', 'A Minor', 'E Minor'];
 
