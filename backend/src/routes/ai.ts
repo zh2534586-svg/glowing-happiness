@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs';
 import prisma from '../config/database';
 import { authMiddleware, optionalAuth, AuthRequest } from '../middleware/auth';
 import {
@@ -170,26 +171,60 @@ aiRouter.post('/dubbing', authMiddleware, async (req: AuthRequest, res: Response
 // AI作曲
 aiRouter.post('/compose', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { style, mood, key, bpm, theme, customLyrics } = req.body;
+    const { style, mood, key, bpm, theme, customLyrics, prompt, makeInstrumental } = req.body;
+    const compositionId = uuidv4();
+
+    // Step 1: Generate composition via DeepSeek
     const result = await generateComposition({
       style: style || '流行',
       mood: mood || '欢快',
       key: key || 'C Major',
       bpm: bpm || 120,
-      theme,
+      theme: theme || prompt, // prompt serves as theme if no explicit theme
       customLyrics,
+      prompt,
+      makeInstrumental,
     });
 
+    // Step 2: Generate audio (MIDI + instrumental WAV) via ai-service
+    let audioUrls: Record<string, string> = {};
+    try {
+      const { composeAudio, synthesizeInstrumentalWav } = await import('ai-service');
+      const audioResult = await composeAudio(result, compositionId);
+
+      // Generate a simple instrumental WAV (pure math, no external tools needed)
+      const instrumentalBuffer = synthesizeInstrumentalWav(result);
+      const instrumentalWavPath = `/var/www/aimusic/backend/uploads/generated/${compositionId}_instrumental.wav`;
+      fs.writeFileSync(instrumentalWavPath, instrumentalBuffer);
+
+      audioUrls = {
+        midiUrl: audioResult.midiUrl,
+        instrumentalUrl: `/uploads/generated/${compositionId}_instrumental.wav`,
+      };
+    } catch (audioErr: any) {
+      console.warn('Audio generation fallback — returning composition JSON only:', audioErr.message);
+    }
+
     const data = {
-      id: uuidv4(),
+      id: compositionId,
       ...result,
-      model: 'MusicGen + DeepSeek',
+      audioUrls,
+      model: 'DeepSeek + MIDI Synth',
     };
 
     await prisma.project.create({
-      data: { userId: req.userId!, type: 'compose', title: result.title || `AI作曲 - ${style}`, status: 'completed', outputUrl: JSON.stringify(data) },
+      data: {
+        userId: req.userId!,
+        type: 'compose',
+        title: result.title || `AI作曲 - ${style || '自定义'}`,
+        status: 'completed',
+        outputUrl: JSON.stringify(data),
+      },
     });
-    await prisma.user.update({ where: { id: req.userId! }, data: { credits: { decrement: 3 } } });
+    await prisma.user.update({
+      where: { id: req.userId! },
+      data: { credits: { decrement: 5 } },
+    });
 
     res.json(data);
   } catch (err: any) {
